@@ -1,69 +1,242 @@
-# Capstone Starter Project
+# Final Vue Capstone Project Seed
 
-## Database
+This is the Vue starter project for the final capstone. This document walks you through how to set up and run the project. It also explains the project's features, such as Vue Router, Vuex, and authentication.
 
-Inside the `API/database/` directory, there's a SQL script called `capstone.sql` that can be used to build and rebuild a Microsoft SQL Server database for the capstone project.
+## Project setup
 
-> The SQL script drops the database if it exists and creates a new database called `final_capstone`. You may choose to modify the script to change the database name, or add more tables and data to it.
-
-> If you change the database name, be sure to update the connection string in the server project. See the connection string section for more about this.
-
-### Default users
-
-The script creates two default users for your application—you may choose to use them or not. You may also choose to modify the default users and roles as you see fit.
-
-| Username | Password   | Role    |
-| -------- | ---------- | ------- |
-| `user`   | `password` | `user`  |
-| `admin`  | `password` | `admin` |
-
-## ASP.NET Server
-
-An ASP.NET Core Web API server project has been created for you to use as a starting point.
-
-### Connection string
-
-A connection string to the database has been configured for you in `appsettings.json`. It connects to the `final_capstone` database using your Windows login (`Trusted_Connection`).
-
-> You can change the name of this database if you want, but remember to change it here and in the `capstone.sql` script in the database folder:
-
-```json
-"ConnectionStrings": {
-    "Project": "Server=.\\SQLEXPRESS;Database=final_capstone;Trusted_Connection=True;"
-},
-```
-
-### CORS
-
-The ASP.NET server has been pre-configured for you to accept Cross-Origin Resource Sharing (CORS) requests. This is necessary because your client and server both run on `localhost` but with different ports.
-
-#### Firefox: "CORS request did not succeed"
-
-If you use Firefox for your testing, you may encounter this message in the browser console when attempting a login or any other request from Vue to your .NET server:
+The first thing you'll need to do is to download any dependencies by running this command:
 
 ```
-Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at https://localhost:44315/login. (Reason: CORS request did not succeed).
+npm install
 ```
 
-This is because the HTTPS certificate used by your .NET project is a self-signed certificate intended for development, and [Firefox doesn't consider it valid for CORS requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS/Errors/CORSDidNotSucceed). You'll have to tell Firefox to trust your certificate by completing these steps:
+Next you'll need to open the `.env` file that's located in the root of the project. You can store the environment variables that you want to use throughout your application in this file. When you open it, it'll look like this:
 
-1. Open your project URL in Firefox. This should be `https://localhost:44315/`. (Adjust port number if necessary.)
-2. Firefox displays a warning message similar to the one below. Click the "Advanced" button:
+```
+# .NET
+VUE_APP_REMOTE_API=https://localhost:44315
+```
 
-![Firefox Warning](./img/firefox-security-warning.png)
+Your Vue frontend communicates with this API endpoint to authenticate and register users. This URL should work for the included API project, but if you need to point to a different endpoint, you would need to modify this file as appropriate.
 
-3. In the "Advanced" panel that opens, click "Accept the Risk and Continue":
+Remember that when you run the Vue application, the backend API application must be running also. To start your Vue application with the following command:
 
-![Firefox Advanced Panel](./img/firefox-advanced-panel.png)
+```
+npm run serve
+```
 
-Your CORS requests from Vue to your .NET server now work.
+## Authentication
 
-### Security
+When you first run the project and visit the base URL, you're taken to a login page. This is because the home route `/` is secured by default. If you look in `/src/router/index.js`, you'll see the following code:
 
-Most of the functionality related to JWT generation and security is located in the `Security` folder. You shouldn't have to modify anything here, but feel free to go through the code if you'd like to see how things work.
+```js
+router.beforeEach((to, from, next) => {
+  // Determine if the route requires Authentication
+  const requiresAuth = to.matched.some(x => x.meta.requiresAuth);
 
-### Login Controller
+  // If it does and they are not logged in, send the user to "/login"
+  if (requiresAuth && store.state.token === '') {
+    next("/login");
+  } else {
+    // Else let them go to their next destination
+    next();
+  }
+});
+```
 
-There's a single controller in the `Controllers` folder: `LoginController.cs`. This controller responds to the `/login` and `/register` endpoints and works with the Vue starter as is. If you need to modify the user registration form, start here.
+This is a feature of Vue Router called [Navigation Guards](https://router.vuejs.org/guide/advanced/navigation-guards.html). You may not have learned about this in class, so take some time to read through the documentation to learn what they are and how they work.
 
-The controller uses the `UserSqlDAO` to read and write data from the `users` table.
+The above code runs before each route. It first checks to see if the route requires authentication that is defined per route using the meta object key `requiresAuth`.
+
+In the following configuration, you must be authenticated to view the home route while anyone can visit the login, logout, and registration routes:
+
+```js
+const router = new Router({
+  mode: 'history',
+  base: process.env.BASE_URL,
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: Home,
+      meta: {
+        requiresAuth: true
+      }
+    },
+    {
+      path: "/login",
+      name: "login",
+      component: Login,
+      meta: {
+        requiresAuth: false
+      }
+    },
+    {
+      path: "/logout",
+      name: "logout",
+      component: Logout,
+      meta: {
+        requiresAuth: false
+      }
+    },
+    {
+      path: "/register",
+      name: "register",
+      component: Register,
+      meta: {
+        requiresAuth: false
+      }
+    },
+  ]
+})
+```
+
+Next, the navigation guard checks to see if the route requires authentication and if an authentication token exists.
+
+If authentication is not required, *or* the authentication token does exist—meaning it isn't an empty string—the user is routed to the requested route.
+
+However, if authentication is required *and* the authentication token doesn't exist—meaning it's an empty string—the user is redirected to the `/login` route:
+
+```js
+// If it does and they are not logged in, send the user to "/login"
+if (requiresAuth && store.state.token === '') {
+  next("/login");
+} else {
+  // Else let them go to their next destination
+  next();
+}
+```
+> Note: the application stores the current user (if any) and their authentication token in a centralized store using Vuex.
+
+### Vuex
+
+The state for this application is stored in `/store/index.js` using Vuex. The state object has two values: token and user. When you log in, the back-end service returns an authentication token along with your user credentials.
+
+The authentication token is sent in the `Authorization` header to verify your identify. To persist this token when the application is closed or the page is refreshed, you'll store the token in local storage.
+
+The default token either comes from local storage or it is set to an empty string. As you learned in the previous section, if the route requires authentication and this token is empty, it redirects the user to the login page:
+
+```js
+const currentToken = localStorage.getItem('token')
+
+export default new Vuex.Store({
+  state: {
+    token: currentToken || '',
+    user: currentUser || {}
+  },
+```
+
+### Login
+
+When you reach the `/login` route, you'll see a bare login page. This is intentional. It's up to you to style this page to fit within your application.
+
+When you fill in a username and password and click the "Sign In" button, the method `login()` is called. The `login()` method uses the `/src/services/AuthService.js` to send a `POST` request to your API's `/login` route.
+
+If you look at `AuthService`, you'll notice that there's no base URL set for Axios:
+
+```js
+import axios from 'axios';
+
+export default {
+
+  login(user) {
+    return axios.post('/login', user)
+  }
+
+}
+```
+
+This is because this value is set in `/src/main.js` and the value comes from the `.env` property file you
+saw earlier:
+
+```js
+axios.defaults.baseURL = process.env.VUE_APP_REMOTE_API;
+```
+
+If you get a successful response (200), it contains the authentication token and user object. You'll set these in Vuex by committing mutations:
+
+```js
+login() {
+  authService
+    .login(this.user)
+    .then(response => {
+      if (response.status == 200) {
+        this.$store.commit("SET_AUTH_TOKEN", response.data.token);
+        this.$store.commit("SET_USER", response.data.user);
+        this.$router.push("/");
+      }
+    })
+}
+```
+
+When you call the `SET_AUTH_TOKEN` mutation, several things happen.
+
+First, you set the `state.token` value to what was returned from the API's `/login` method. Next, you store that same value in local storage so that it persists across refreshes. Finally, you set the `Authorization` header in Axios so that every subsequent request contains the token. This way, you don't have to manually do this on every request:
+
+```js
+mutations: {
+  SET_AUTH_TOKEN(state, token) {
+    state.token = token;
+    localStorage.setItem('token', token);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  }
+}
+```
+
+Once the `login()` method finishes updating the store by committing the mutations, it forwards the user back to the homepage. They'll be able to see the homepage because they're authenticated.
+
+### Logout
+
+There's a logout link in `App.vue` that forwards the user to the `/logout` route. When the user reaches this route, you'll commit this mutation in the store called `LOGOUT`:
+
+```html
+<template>
+  <h1>Logout</h1>
+</template>
+
+<script>
+export default {
+  created() {
+    this.$store.commit("LOGOUT");
+    this.$router.push("/login");
+  }
+};
+</script>
+```
+
+When the mutation is called, the token is removed from local storage, the token and user state are cleared, and the user is redirected back to the homepage. The homepage then forwards the user to the login page because they're no longer logged in:
+
+```js
+mutations: {
+  LOGOUT(state) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    state.token = '';
+    state.user = {};
+  }
+}
+```
+
+### Register
+
+When you reach the `/register` route, you'll see a bare registration page. Like the login page, this is intentional. You'll need to style this page to fit within your application.
+
+When you fill in a username, password, confirm the password role, and click the "Create Account" button, the method `register()` is called. This calls the `register()` method in `/src/services/AuthService.js`. This passes  your user details to your back-end application's REST API to create a new user:
+
+```js
+methods: {
+register() {
+  // ...
+  authService
+    .register(this.user)
+    .then(response => {
+      if (response.status == 201) {
+        this.$router.push({
+          path: "/login",
+          query: { registration: "success" }
+        });
+      }
+    })
+  // ...
+}
+```
